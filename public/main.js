@@ -55,9 +55,41 @@ const plr = new Player(0, 0);
 const cam = new Camera(plr);
 let previousPlayerX = plr.x;
 let previousPlayerY = plr.y;
+let currentUsername = "Anonymous";
+
+const mainMenu = document.getElementById("mainMenu");
+const chatPanel = document.getElementById("chatPanel");
+const chatMessages = document.getElementById("chatMessages");
+const chatForm = document.getElementById("chatForm");
+const chatInput = document.getElementById("chatInput");
+
+function isTextEntryTarget(target) {
+    return target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable;
+}
+
+function stopPlayerInput() {
+    plr.keysDown = {};
+    plr.grappling = false;
+}
 
 // Key presses
 window.addEventListener("keydown", (ev) => {
+    if (isTextEntryTarget(ev.target)) {
+        if (ev.key === "Escape") {
+            ev.target.blur();
+        }
+        return;
+    }
+
+    if (ev.key === "Enter" && mainMenu.style.display === "none") {
+        ev.preventDefault();
+        stopPlayerInput();
+        chatInput.focus();
+        return;
+    }
+
     plr.keysDown[ev.key.toLowerCase()] = true;
     if (ev.key.toLowerCase() === "r") {
         plr.x = 0;
@@ -86,6 +118,8 @@ window.addEventListener("keyup", (ev) => {
     }
 });
 window.addEventListener("mousedown", (ev) => {
+    if (ev.target.closest("#mainMenu, #chatPanel")) return;
+
     plr.mouse.down = true;
     plr.mouse.button = ev.button;
     plr.mouse.x = ev.clientX;
@@ -105,6 +139,8 @@ window.addEventListener("mousemove", (ev) => {
 });
 // Scroll detection
 window.addEventListener("wheel", (ev) => {
+    if (ev.target.closest("#chatPanel")) return;
+
     cam.zoom += ev.deltaY / 100;
     if (cam.zoom < 0.1) cam.zoom -= ev.deltaY / 100;
     cam.moveTo(plr.x + plr.width / 2 - (viewportWidth / 2 * cam.zoom), plr.y + plr.height / 2 - (viewportHeight / 2 * cam.zoom));
@@ -249,7 +285,7 @@ function render(playerX, playerY) {
 
     // Draw grapple hook
     if (plr.grappling) {
-        ctx.strokeStyle = "rgb(50, 50, 50)";
+        ctx.strokeStyle = plr.color;
         ctx.lineWidth = 8 / cam.zoom;
         ctx.beginPath();
         ctx.moveTo((playerX + plr.width / 2 - cam.x) / cam.zoom, (playerY + plr.height / 2 - cam.y) / cam.zoom);
@@ -265,7 +301,7 @@ function render(playerX, playerY) {
 
         // Draw their grapple only while it is attached.
         if (other.grappling) {
-            ctx.strokeStyle = "rgb(255, 80, 80)";
+            ctx.strokeStyle = other.color;
             ctx.lineWidth = 8 / cam.zoom;
             ctx.beginPath();
             ctx.moveTo((other.x + 32 / 2 - cam.x) / cam.zoom, (other.y + 32 / 2 - cam.y) / cam.zoom);
@@ -274,14 +310,30 @@ function render(playerX, playerY) {
         }
 
         ctx.fillStyle = "red";
-        ctx.fillStyle = "rgb(255, 80, 80)";
+        ctx.fillStyle = other.color;
         ctx.fillRect((other.x - cam.x) / cam.zoom, (other.y - cam.y) / cam.zoom, 32 / cam.zoom, 32 / cam.zoom);
         ctx.fillStyle = "rgb(0,0,0)";
         ctx.fillRect((other.x - cam.x + 4) / cam.zoom, (other.y - cam.y + 4) / cam.zoom, (32 - 8) / cam.zoom, (32 - 8) / cam.zoom);
+        ctx.font = "24px monospace";
+        ctx.textAlign = "center";
+        const nameX = (other.x + 16 - cam.x) / cam.zoom;
+        const nameY = (other.y - 8 - cam.y) / cam.zoom;
+        const nameMetrics = ctx.measureText(other.name);
+        const namePaddingX = 6;
+        const namePaddingY = 3;
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(
+            nameX - nameMetrics.width / 2 - namePaddingX,
+            nameY - nameMetrics.actualBoundingBoxAscent - namePaddingY,
+            nameMetrics.width + namePaddingX * 2,
+            nameMetrics.actualBoundingBoxAscent + nameMetrics.actualBoundingBoxDescent + namePaddingY * 2
+        );
+        ctx.fillStyle = "rgb(255, 255, 255)";
+        ctx.fillText(other.name, nameX, nameY);
     }
 
     // Draw Player
-    ctx.fillStyle = "rgb(80,150,255)";
+    ctx.fillStyle = plr.color;
     ctx.fillRect((playerX - cam.x) / cam.zoom, (playerY - cam.y) / cam.zoom, plr.width / cam.zoom, plr.height / cam.zoom);
     ctx.fillStyle = "rgb(0,0,0)";
     ctx.fillRect((playerX - cam.x + 4) / cam.zoom, (playerY - cam.y + 4) / cam.zoom, (plr.width - 8) / cam.zoom, (plr.height - 8) / cam.zoom);
@@ -290,11 +342,63 @@ function render(playerX, playerY) {
 window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
 
+function addChatMessage(author, message, options = {}) {
+    const listItem = document.createElement("li");
+    listItem.className = options.system ? "chatMessage chatSystemMessage" : "chatMessage";
+
+    if (options.system) {
+        listItem.textContent = message;
+    } else {
+        const authorElement = document.createElement("span");
+        authorElement.className = "chatAuthor";
+        authorElement.textContent = `${author}: `;
+
+        const messageElement = document.createElement("span");
+        messageElement.textContent = message;
+
+        listItem.append(authorElement, messageElement);
+    }
+
+    chatMessages.append(listItem);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+chatInput.addEventListener("focus", stopPlayerInput);
+
+chatForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const message = chatInput.value.trim();
+
+    if (!message) return;
+
+    if (socket.readyState !== WebSocket.OPEN) {
+        addChatMessage("", "Chat is still connecting. Try again in a moment.", { system: true });
+        return;
+    }
+
+    socket.send(JSON.stringify({
+        type: "chat",
+        message
+    }));
+    chatInput.value = "";
+    chatInput.focus();
+});
+
+// The server integration can call this when a chat message arrives.
+window.addChatMessage = addChatMessage;
+
 // Multiplayer handling stuff
 
+const isLocal = (
+    location.hostname === "localhost" ||
+    location.hostname === "127.0.0.1"
+);
+
 const socket = new WebSocket(
-    "wss://vague-hickory-sofa.onrender.com"
-);;
+    isLocal
+        ? "ws://localhost:8080"
+        : "wss://vague-hickory-sofa.onrender.com"
+);
 
 let myId = null;
 const otherPlayers = new Map();
@@ -304,6 +408,14 @@ socket.addEventListener("message", (event) => {
 
     if (data.type === "welcome") {
         myId = data.id;
+    }
+
+    if (
+        data.type === "chat" &&
+        typeof data.name === "string" &&
+        typeof data.message === "string"
+    ) {
+        addChatMessage(data.name, data.message);
     }
 
     if (data.type === "snapshot") {
@@ -322,6 +434,8 @@ socket.addEventListener("message", (event) => {
                 other.grappleX = p.grappleX;
                 other.grappleY = p.grappleY;
                 other.grappling = p.grappling;
+                other.name = p.name;
+                other.color = p.color;
             } else {
                 otherPlayers.set(p.id, {
                     x: p.x,
@@ -330,7 +444,9 @@ socket.addEventListener("message", (event) => {
                     targetY: p.y,
                     grappleX: p.grappleX,
                     grappleY: p.grappleY,
-                    grappling: p.grappling
+                    grappling: p.grappling,
+                    name: p.name,
+                    color: p.color
                 });
             }
         }
@@ -343,22 +459,6 @@ socket.addEventListener("message", (event) => {
         }
     }
 });
-
-// Send your position 20 times per second
-setInterval(() => {
-    if (socket.readyState !== WebSocket.OPEN) return;
-    if (myId === null) return;
-
-    socket.send(JSON.stringify({
-        type: "position",
-        x: plr.x,
-        y: plr.y,
-        grappleX: plr.grappleX,
-        grappleY: plr.grappleY,
-        grappling: plr.grappling
-    }));
-}, 50);
-
 
 // game loop
 let lastTime = performance.now();
@@ -391,4 +491,38 @@ document.addEventListener("visibilitychange", () => {
     }
 });
 
-requestAnimationFrame(gameLoop);
+render();
+
+document.getElementById("startButton").onclick = () => {
+    const usernameInput = document.getElementById("nameInput");
+    const username = usernameInput.value.trim();
+    if (username.length >= 2 && username.length <= 16) {
+        currentUsername = username;
+        mainMenu.style.display = "none";
+        chatPanel.style.display = "block";
+        chatPanel.setAttribute("aria-hidden", "false");
+        addChatMessage("", "Press Enter at any time to start chatting.", { system: true });
+        plr.color = document.getElementById("colorInput").value;
+        requestAnimationFrame(gameLoop);
+        // Send WebSocket Data for name and color
+        socket.send(JSON.stringify({
+            type: "initial",
+            name: currentUsername,
+            color: plr.color
+        }));
+        // Loop to send WebSocket data
+        setInterval(() => {
+            if (socket.readyState !== WebSocket.OPEN) return;
+            if (myId === null) return;
+
+            socket.send(JSON.stringify({
+                type: "position",
+                x: plr.x,
+                y: plr.y,
+                grappleX: plr.grappleX,
+                grappleY: plr.grappleY,
+                grappling: plr.grappling
+            }));
+        }, 50);
+    }
+}

@@ -19,6 +19,8 @@ export default class Player {
         this.maxGrappleLength = 500;
         this.grappleStep = 4;
         this.grapplePower = 0.0001;
+        this.username = "Anonymous";
+        this.color = "rgb(80,150,255)";
 
         this.moveKeys = {
             up: "w",
@@ -34,6 +36,6 @@ export default class Player {
             button: 0,
             x: 0,
             y: 0
-        }
+        };
     }
 }
