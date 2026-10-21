@@ -83,7 +83,7 @@ window.addEventListener("keydown", (ev) => {
         return;
     }
 
-    if (ev.key === "Enter" && mainMenu.style.display === "none") {
+    if (ev.key === "/" && mainMenu.style.display === "none") {
         ev.preventDefault();
         stopPlayerInput();
         chatInput.focus();
@@ -118,7 +118,10 @@ window.addEventListener("keyup", (ev) => {
     }
 });
 window.addEventListener("mousedown", (ev) => {
-    if (ev.target.closest("#mainMenu, #chatPanel")) return;
+    if (
+        document.activeElement === chatInput ||
+        ev.target.closest("#mainMenu, #chatPanel")
+    ) return;
 
     plr.mouse.down = true;
     plr.mouse.button = ev.button;
@@ -139,7 +142,10 @@ window.addEventListener("mousemove", (ev) => {
 });
 // Scroll detection
 window.addEventListener("wheel", (ev) => {
-    if (ev.target.closest("#chatPanel")) return;
+    if (
+        document.activeElement === chatInput ||
+        ev.target.closest("#chatPanel")
+    ) return;
 
     cam.zoom += ev.deltaY / 100;
     if (cam.zoom < 0.1) cam.zoom -= ev.deltaY / 100;
@@ -381,7 +387,7 @@ chatForm.addEventListener("submit", (event) => {
         message
     }));
     chatInput.value = "";
-    chatInput.focus();
+    chatInput.blur();
 });
 
 // The server integration can call this when a chat message arrives.
@@ -501,7 +507,7 @@ document.getElementById("startButton").onclick = () => {
         mainMenu.style.display = "none";
         chatPanel.style.display = "block";
         chatPanel.setAttribute("aria-hidden", "false");
-        addChatMessage("", "Press Enter at any time to start chatting.", { system: true });
+        addChatMessage("", "Press / at any time to start chatting.", { system: true });
         plr.color = document.getElementById("colorInput").value;
         requestAnimationFrame(gameLoop);
         // Send WebSocket Data for name and color
